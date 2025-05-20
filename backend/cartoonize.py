@@ -183,6 +183,53 @@ def exaggerate_features(image_path, output_path, eye_scale=0.8, ear_scale=1.1, n
     cv2.imwrite(output_path, img)
     return output_path
 
+def fast_exaggerate_features(image_path, output_path, eye_scale=0.8, ear_scale=1.1, nose_scale=1.1):
+    """
+    A faster version of exaggerate_features for real-time slider adjustments
+    """
+    img = cv2.imread(image_path)
+    if img is None:
+        raise ValueError(f"Could not read image at {image_path}")
+        
+    h, w = img.shape[:2]
+    # Use static face mesh to avoid redetection for each adjustment
+    mp_face_mesh = mp.solutions.face_mesh
+    face_mesh = mp.solutions.face_mesh.FaceMesh(
+        static_image_mode=True,
+        max_num_faces=1,
+        refine_landmarks=False  # Skip refinement for speed
+    )
+    
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(img_rgb)
+
+    if not results.multi_face_landmarks:
+        # No face detected, just save the original image
+        cv2.imwrite(output_path, img)
+        return output_path
+
+    landmarks = results.multi_face_landmarks[0]
+    points = np.array([[int(p.x * w), int(p.y * h)] for p in landmarks.landmark])
+
+    # Define regions - same as the original function
+    left_eye_center = get_region_center(points, [33, 133, 159, 145, 160, 158])
+    right_eye_center = get_region_center(points, [263, 362, 387, 373, 380, 385])
+    nose_center = get_region_center(points, [152, 148, 377, 400, 378, 379])
+    face_outline_center = get_region_center(points, list(range(0, 17)))
+    left_ear_center = get_region_center(points, [234, 93, 132, 58, 127])
+    right_ear_center = get_region_center(points, [454, 323, 361, 288, 356])
+
+    # Invert the scale values to match slider expectation (smaller number = bigger features)
+    # Values less than 1.0 will make features bigger, greater than 1.0 will make them smaller
+    img = warp_region(img, left_eye_center, scale=eye_scale, radius=60)
+    img = warp_region(img, right_eye_center, scale=eye_scale, radius=60)
+    img = warp_region(img, face_outline_center, scale=nose_scale, radius=130)
+    img = warp_region(img, left_ear_center, scale=ear_scale, radius=70)
+    img = warp_region(img, right_ear_center, scale=ear_scale, radius=70)
+
+    cv2.imwrite(output_path, img)
+    return output_path
+
 def optimize_cartoon_parameters(image_path, output_dir, num_generations=6, pop_size=8):
     """
     Use Genetic Algorithm to optimize cartoonization parameters
